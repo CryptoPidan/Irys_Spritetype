@@ -2,6 +2,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using Newtonsoft.Json;
+using Nethereum.Util;
 
 namespace Irys_Spritetype
 {
@@ -10,11 +11,25 @@ namespace Irys_Spritetype
         public static readonly object _lock = new();
         public static readonly object _dataLock = new();
         public static List<AccountInfo> AccountInfoList = [];
+        public static int ScriptRunCount = 5;
+        public static int RunMode = 1;
+
         static async Task Main()
         {
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             LoadPrivateKeyAndProxyAndLog();
+
+            Console.Write("请输入每个账号执行多少次脚本：");
+            var inputCount = Console.ReadLine();
+            if (int.TryParse(inputCount, out int count) && count > 0)
+                ScriptRunCount = count;
+
+            Console.Write("请选择运行模式（1.安全模式 2.极速模式）：");
+            var inputMode = Console.ReadLine();
+            if (int.TryParse(inputMode, out int mode) && (mode == 1 || mode == 2))
+                RunMode = mode;
+
             while (true)
             {
                 foreach (var account in AccountInfoList)
@@ -31,7 +46,7 @@ namespace Irys_Spritetype
                         {
                             if (account.FailTime < 15)
                                 account.FailTime += 1;
-                            account.NextExecutionTime = DateTime.Now.AddSeconds(Math.Pow(2, account.FailTime));
+                            account.NextExecutionTime = DateTime.Now.AddSeconds(10);
                             ShowMsg($"执行异常(第{account.FailTime}次): {ex.Message}", 3);
                         }
                     }
@@ -39,7 +54,7 @@ namespace Irys_Spritetype
                 Thread.Sleep(1000);
             }
         }
- 
+
         public static async Task<string> Spritetype(AccountInfo accountInfo)
         {
             HttpClientHandler httpClientHandler = new();
@@ -96,16 +111,38 @@ namespace Irys_Spritetype
             var payloadJson = JsonConvert.SerializeObject(payload);
             request.Content = new StringContent(payloadJson);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            HttpResponseMessage response = await client.SendAsync(request);
+            HttpResponseMessage response;
+            try
+            {
+                 response = await client.SendAsync(request);
+            }
+            catch(Exception ex)
+            {
+                ShowMsg($"提交失败："+ex.Message, 3);
+                return "提交失败";
+            }
+                
             string responseBody = await response.Content.ReadAsStringAsync();
-
+            if (response.StatusCode == HttpStatusCode.BadRequest && responseBody.Contains("Please wait"))
+            {
+                int waitSeconds = 30;
+                var match = System.Text.RegularExpressions.Regex.Match(responseBody, @"Please wait (\d+) seconds");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out int sec))
+                {
+                    waitSeconds = sec;
+                }
+                ShowMsg($"接口已限制，等待{waitSeconds}秒后重试...", 2);
+                Thread.Sleep(waitSeconds * 1000);
+                return "接口限制原因，提交失败";
+            }
             try
             {
                 response.EnsureSuccessStatusCode();
             }
             catch (HttpRequestException ex)
             {
-                throw (new Exception($"{ex.Message}\n响应内容: {(string.IsNullOrEmpty(responseBody) ? "无响应" : responseBody)}"));
+                ShowMsg($"异常信息:" +ex.Message , 2);
+                return "，提交失败:" + responseBody;
             }
             var json = System.Text.Json.JsonDocument.Parse(responseBody);
             json.RootElement.TryGetProperty("message", out var nonceElement);
@@ -139,12 +176,24 @@ namespace Irys_Spritetype
         {
             ShowMsg($"当前时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", 0);
             ShowMsg("当前执行账号:" + accountInfo.Index + " - " + accountInfo.Address, 0);
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < ScriptRunCount; i++)
             {
                 string SpritetypeResult = await Spritetype(accountInfo);
-                ShowMsg("成绩提交:" + SpritetypeResult, 1);
-                ShowMsg("35秒后进行下一轮",1);
-                Thread.Sleep(35000);
+                ShowMsg($"第{i + 1}次-成绩提交:" + SpritetypeResult, 1);
+                if(!SpritetypeResult.Contains("Successfully submitted to leaderboard!"))
+                {
+                    i = i - 1;
+                }
+                if (RunMode == 2)
+                {
+                    Thread.Sleep(1000);
+                }
+                else
+                {
+                    ShowMsg("35秒后进行下一轮", 1);
+                    Thread.Sleep(35000);
+                }
+
             }
         }
         public static void LoadPrivateKeyAndProxyAndLog()
@@ -166,6 +215,7 @@ namespace Irys_Spritetype
             foreach (var line in address)
             {
                 string key = line.Trim();
+                key = AddressUtil.Current.ConvertToChecksumAddress(key);
                 if (string.IsNullOrWhiteSpace(key))
                 {
                     continue;
