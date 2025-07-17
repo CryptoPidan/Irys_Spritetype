@@ -25,11 +25,11 @@
    >  如果你不打算修改代码或编译源码，可以直接下载并运行已编译好的 [Release]
 ```
 2. 打开终端（CMD / PowerShell / Terminal），进入项目目录：
-	```bash
+```
    cd path/to/your/project
-	```
+```
 3. 运行脚本：
-```bash
+```
 dotnet run
 ```
 
