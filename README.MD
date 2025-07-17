@@ -30,7 +30,7 @@
 ```
 3. 运行脚本：
 ```
-dotnet run
+   dotnet run
 ```
 
 
