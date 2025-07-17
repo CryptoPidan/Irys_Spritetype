@@ -16,7 +16,6 @@ namespace Irys_Spritetype
 
         static async Task Main()
         {
-            Directory.SetCurrentDirectory(AppContext.BaseDirectory);
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             LoadPrivateKeyAndProxyAndLog();
 
